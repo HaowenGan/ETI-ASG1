@@ -28,6 +28,7 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/v1/register", Register).Methods("POST")
 	router.HandleFunc("/api/v1/delete/{userID:[0-9]+}", DeleteUser).Methods("DELETE")
+	router.HandleFunc("/api/v1/update/{userID:[0-9]+}", UpdateUser).Methods("PUT")
 	fmt.Println("Listening at Port 5000")
 	log.Fatal(http.ListenAndServe(":5000", router))
 }
@@ -99,4 +100,57 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	fmt.Fprintf(w, "User deleted successfully!")
+}
+
+func UpdateUser(w http.ResponseWriter, r *http.Request) {
+	// Extract user ID from the request URL
+	vars := mux.Vars(r)
+	userID := vars["userID"]
+
+	// Parse form data
+	err := r.ParseForm()
+	if err != nil {
+		http.Error(w, "Unable to parse form", http.StatusBadRequest)
+		return
+	}
+
+	// Retrieve updated user information from the form
+	firstName := r.FormValue("first_name")
+	lastName := r.FormValue("last_name")
+	mobileNumber := r.FormValue("mobile_number")
+	emailAddress := r.FormValue("email_address")
+	isCarOwner := r.FormValue("is_car_owner") == "true" // Assuming a checkbox or boolean input
+	driverLicenseNumber := r.FormValue("driver_license_number")
+	carPlateNumber := r.FormValue("car_plate_number")
+
+	// Validate that driver_license_number and car_plate_number are not blank when isCarOwner is true
+	if isCarOwner && (driverLicenseNumber == "" || carPlateNumber == "") {
+		http.Error(w, "Driver license number and car plate number cannot be blank for car owners", http.StatusBadRequest)
+		return
+	}
+
+	// Update user information in the database
+	query := "UPDATE users SET first_name=?, last_name=?, mobile_number=?, email_address=?, is_car_owner=?"
+	params := []interface{}{firstName, lastName, mobileNumber, emailAddress, isCarOwner}
+
+	if isCarOwner {
+		query += ", driver_license_number=?, car_plate_number=?"
+		params = append(params, driverLicenseNumber, carPlateNumber)
+	} else {
+		// If not a car owner, set driver_license_number and car_plate_number to NULL
+		query += ", driver_license_number=NULL, car_plate_number=NULL"
+	}
+
+	query += " WHERE user_id=?"
+	params = append(params, userID)
+
+	_, err = db.Exec(query, params...)
+	if err != nil {
+		log.Println("Error updating user details:", err)
+		http.Error(w, "Error updating user details", http.StatusInternalServerError)
+		return
+	}
+
+	// Respond to the client
+	fmt.Fprintf(w, "User details updated successfully!")
 }
