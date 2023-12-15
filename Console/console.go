@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -9,11 +11,24 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 )
 
 var db *sql.DB
+
+type Trip struct {
+	TripID                  int    `json:"tripId"`
+	OwnerID                 int    `json:"ownerId"`
+	OwnerEmail              string `json:"ownerEmail"`
+	PickupLocation          string `json:"pickupLocation"`
+	AlternatePickupLocation string `json:"alternatePickupLocation"`
+	StartTime               string `json:"startTime"`
+	Destination             string `json:"destination"`
+	SeatsAvailable          int    `json:"seatsAvailable"`
+	Published               bool   `json:"published"`
+}
 
 func main() {
 	var err error
@@ -117,7 +132,7 @@ func Register(firstName, lastName, mobileNumber, emailAddress, password string) 
 	}
 
 	// Make the HTTP POST request
-	resp, err := http.PostForm("http://localhost:5000/api/v1/register", formData)
+	resp, err := http.PostForm("http://localhost:5001/api/v1/register", formData)
 	if err != nil {
 		return err
 	}
@@ -136,25 +151,59 @@ func Register(firstName, lastName, mobileNumber, emailAddress, password string) 
 func UserMenu(email string) {
 	var option int
 	var password string
+	var isCarOwner bool
+
+	// Check if the user is a car owner
+	err := db.QueryRow("SELECT is_car_owner FROM users WHERE email_address=?", email).Scan(&isCarOwner)
+	if err != nil {
+		fmt.Println("Error retrieving user information:", err)
+		return
+	}
 	for {
-		fmt.Println("============\nUser Console\n 1. Option 1\n 2. Update User Details\n 3. Delete Account\n 0. Logout")
-		fmt.Print("Enter an option: ")
-		fmt.Scan(&option)
-		if option == 0 {
-			break
-		} else if option == 2 {
-			UpdateUserDetails(email, password)
-		} else if option == 3 {
-			fmt.Print("Enter your password to confirm account deletion: ")
-			fmt.Scan(&password)
-			err := DeleteUser(email, password)
-			if err != nil {
-				fmt.Println("Error deleting user:", err)
-			} else {
-				fmt.Println("Account deleted successfully!")
-				break // exit the loop after deleting the account
+		if isCarOwner {
+			fmt.Println("============\nUser Console\n 1. Create Trip\n 2. Edit Trip\n 3. Update User Details\n 4. Delete Account\n 0. Logout")
+			fmt.Print("Enter an option: ")
+			fmt.Scan(&option)
+			if option == 0 {
+				break
+			} else if option == 1 {
+				CreateTrip(email)
+			} else if option == 2 {
+				EditTrip(email)
+			} else if option == 3 {
+				UpdateUserDetails(email, password)
+			} else if option == 4 {
+				fmt.Print("Enter your password to confirm account deletion: ")
+				fmt.Scan(&password)
+				err := DeleteUser(email, password)
+				if err != nil {
+					fmt.Println("Error deleting user:", err)
+				} else {
+					fmt.Println("Account deleted successfully!")
+					break // exit the loop after deleting the account
+				}
+			}
+		} else {
+			fmt.Println("============\nUser Console\n 1. Enrol Trip\n 2. Update User Details\n 3. Delete Account\n 4. Past Trips\n 0. Logout")
+			fmt.Print("Enter an option: ")
+			fmt.Scan(&option)
+			if option == 0 {
+				break
+			} else if option == 2 {
+				UpdateUserDetails(email, password)
+			} else if option == 3 {
+				fmt.Print("Enter your password to confirm account deletion: ")
+				fmt.Scan(&password)
+				err := DeleteUser(email, password)
+				if err != nil {
+					fmt.Println("Error deleting user:", err)
+				} else {
+					fmt.Println("Account deleted successfully!")
+					break // exit the loop after deleting the account
+				}
 			}
 		}
+
 	}
 }
 
@@ -216,7 +265,7 @@ func UpdateUser(userID int, email, password, firstName, lastName, mobileNumber, 
 	}
 
 	// Construct the URL with the user ID
-	url := fmt.Sprintf("http://localhost:5000/api/v1/update/%d", userID)
+	url := fmt.Sprintf("http://localhost:5001/api/v1/update/%d", userID)
 
 	// Create a new PUT request
 	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(formData.Encode()))
@@ -257,7 +306,7 @@ func DeleteUser(email, password string) error {
 	}
 
 	// Construct the URL with the user ID
-	url := fmt.Sprintf("http://localhost:5000/api/v1/delete/%d", userID)
+	url := fmt.Sprintf("http://localhost:5001/api/v1/delete/%d", userID)
 
 	// Create a new DELETE request
 	req, err := http.NewRequest(http.MethodDelete, url, nil)
@@ -294,4 +343,211 @@ func DeleteUser(email, password string) error {
 	errorMessage := fmt.Sprintf("Unexpected error occurred. Response: %s", string(body))
 	fmt.Println("Error deleting user:", errorMessage)
 	return fmt.Errorf(errorMessage)
+}
+
+func CreateTrip(email string) {
+	var pickupLocation, alternatePickupLocation, startTimeStr, destination string
+	var seatsAvailable int
+	var published bool
+
+	var ownerId int
+	err := db.QueryRow("SELECT user_id FROM users WHERE email_address=?", email).Scan(&ownerId)
+	if err != nil {
+		fmt.Println("Error checking owner's email:", err)
+		return
+	}
+
+	fmt.Print("Enter pickup location: ")
+	fmt.Scan(&pickupLocation)
+	fmt.Print("Enter alternate pickup location: ")
+	fmt.Scan(&alternatePickupLocation)
+	fmt.Print("Enter start time (HH:mm format): ")
+	fmt.Scan(&startTimeStr)
+	fmt.Print("Enter destination: ")
+	fmt.Scan(&destination)
+	fmt.Print("Enter seats available: ")
+	fmt.Scan(&seatsAvailable)
+	fmt.Print("Is the trip published? (true/false): ")
+	fmt.Scan(&published)
+
+	// Validate and parse the time string
+	startTime, err := time.Parse("15:04", startTimeStr)
+	if err != nil {
+		fmt.Println("Error parsing start time:", err)
+		return
+	}
+
+	// Construct the trip data
+	tripData := Trip{
+		OwnerEmail:              email,
+		PickupLocation:          pickupLocation,
+		AlternatePickupLocation: alternatePickupLocation,
+		StartTime:               startTime.Format("15:04"),
+		Destination:             destination,
+		SeatsAvailable:          seatsAvailable,
+		Published:               published,
+	}
+
+	// Convert the trip data to JSON
+	tripJSON, err := json.Marshal(tripData)
+	if err != nil {
+		fmt.Println("Error marshaling trip data:", err)
+		return
+	}
+
+	// Make the HTTP POST request to the trip API
+	resp, err := http.Post("http://localhost:5000/api/v1/MakeTrip", "application/json", bytes.NewBuffer(tripJSON))
+	if err != nil {
+		fmt.Println("Error creating trip:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Check the response status and handle it accordingly
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println("Creating trip failed with status code:", resp.StatusCode)
+		return
+	}
+
+	// If needed, you can read and process the response body here
+
+	fmt.Println("Trip created successfully")
+}
+
+func EditTrip(email string) {
+	var tripID int
+	fmt.Print("Enter the trip ID to edit: ")
+	fmt.Scan(&tripID)
+
+	// Check if the trip belongs to the user
+	var ownerID int
+	err := db.QueryRow("SELECT ownerId FROM Trips WHERE tripId=?", tripID).Scan(&ownerID)
+	if err != nil {
+		fmt.Println("Error checking trip owner:", err)
+		return
+	}
+
+	// Check if the trip belongs to the logged-in user
+	var userID int
+	err = db.QueryRow("SELECT user_id FROM users WHERE email_address=?", email).Scan(&userID)
+	if err != nil {
+		fmt.Println("Error checking user ID:", err)
+		return
+	}
+
+	if ownerID != userID {
+		fmt.Println("You do not have permission to edit this trip.")
+		return
+	}
+
+	// Call the EditTrip function with the tripID
+	EditTripDetails(tripID)
+}
+
+func EditTripDetails(tripID int) {
+	// Fetch the existing trip details
+	var existingTrip Trip
+	err := db.QueryRow("SELECT tripId, ownerId, pickupLocation, alternatePickupLocation, startTime, destination, seatsAvailable, published FROM Trips WHERE tripId=?", tripID).Scan(
+		&existingTrip.TripID,
+		&existingTrip.OwnerID,
+		&existingTrip.PickupLocation,
+		&existingTrip.AlternatePickupLocation,
+		&existingTrip.StartTime,
+		&existingTrip.Destination,
+		&existingTrip.SeatsAvailable,
+		&existingTrip.Published,
+	)
+	if err != nil {
+		fmt.Println("Error fetching trip details:", err)
+		return
+	}
+
+	// Display existing details and prompt for new details
+	fmt.Println("Existing Trip Details:")
+	fmt.Printf("%+v\n", existingTrip)
+
+	var updatedTrip Trip
+	fmt.Print("Enter new pickup location (press Enter to keep existing): ")
+	fmt.Scan(&updatedTrip.PickupLocation)
+	if updatedTrip.PickupLocation == "" {
+		updatedTrip.PickupLocation = existingTrip.PickupLocation
+	}
+
+	fmt.Print("Enter new alternate pickup location (press Enter to keep existing): ")
+	fmt.Scan(&updatedTrip.AlternatePickupLocation)
+	if updatedTrip.AlternatePickupLocation == "" {
+		updatedTrip.AlternatePickupLocation = existingTrip.AlternatePickupLocation
+	}
+
+	fmt.Print("Enter new Start time (press Enter to keep existing): ")
+	fmt.Scan(&updatedTrip.StartTime)
+	if updatedTrip.StartTime == "" {
+		updatedTrip.StartTime = existingTrip.StartTime
+	}
+
+	fmt.Print("Enter new Destination (press Enter to keep existing): ")
+	fmt.Scan(&updatedTrip.Destination)
+	if updatedTrip.Destination == "" {
+		updatedTrip.Destination = existingTrip.Destination
+	}
+
+	fmt.Print("Enter new Seats Available (press Enter to keep existing): ")
+	fmt.Scan(&updatedTrip.SeatsAvailable)
+	if updatedTrip.SeatsAvailable == 0 {
+		updatedTrip.SeatsAvailable = existingTrip.SeatsAvailable
+	}
+
+	fmt.Print("Enter new Published value (true/false, press Enter to keep existing): ")
+	fmt.Scan(&updatedTrip.Published)
+	if !updatedTrip.Published {
+		updatedTrip.Published = existingTrip.Published
+	}
+
+	// Add similar prompts for other fields you want to update
+
+	// Call the API to update the trip details
+	err = UpdateTripDetails(tripID, updatedTrip)
+	if err != nil {
+		fmt.Println("Error updating trip details:", err)
+		return
+	}
+
+	fmt.Println("Trip details updated successfully!")
+}
+
+func UpdateTripDetails(tripID int, updatedTrip Trip) error {
+	// Convert the updated trip data to JSON
+	tripJSON, err := json.Marshal(updatedTrip)
+	if err != nil {
+		return fmt.Errorf("Error marshaling updated trip data: %v", err)
+	}
+
+	// Construct the URL with the trip ID
+	url := fmt.Sprintf("http://localhost:5000/api/v1/EditTrip/%d", tripID)
+
+	// Create a new PUT request
+	req, err := http.NewRequest(http.MethodPut, url, bytes.NewBuffer(tripJSON))
+	if err != nil {
+		return fmt.Errorf("Error creating PUT request: %v", err)
+	}
+
+	// Set the Content-Type header
+	req.Header.Set("Content-Type", "application/json")
+
+	// Make the HTTP request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Error updating trip: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Check the response status and handle it accordingly
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Updating trip failed with status code: %d", resp.StatusCode)
+	}
+
+	// If needed, you can read and process the response body here
+
+	return nil
 }

@@ -29,8 +29,8 @@ func main() {
 	router.HandleFunc("/api/v1/register", Register).Methods("POST")
 	router.HandleFunc("/api/v1/delete/{userID:[0-9]+}", DeleteUser).Methods("DELETE")
 	router.HandleFunc("/api/v1/update/{userID:[0-9]+}", UpdateUser).Methods("PUT")
-	fmt.Println("Listening at Port 5000")
-	log.Fatal(http.ListenAndServe(":5000", router))
+	fmt.Println("Listening at Port 5001")
+	log.Fatal(http.ListenAndServe(":5001", router))
 }
 
 func Register(w http.ResponseWriter, r *http.Request) {
