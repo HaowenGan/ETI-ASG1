@@ -46,10 +46,35 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	lastName := r.FormValue("last_name")
 	mobileNumber := r.FormValue("mobile_number")
 	emailAddress := r.FormValue("email_address")
+	password := r.FormValue("account_password")
+
+	// Check if the email address is already registered
+	var existingEmail string
+	err = db.QueryRow("SELECT email_address FROM users WHERE email_address=?", emailAddress).Scan(&existingEmail)
+	if err == nil {
+		http.Error(w, "Email address is already registered", http.StatusBadRequest)
+		return
+	} else if err != sql.ErrNoRows {
+		log.Println("Error checking existing email:", err)
+		http.Error(w, "Error checking existing email", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if the mobile number is already registered
+	var existingMobile string
+	err = db.QueryRow("SELECT mobile_number FROM users WHERE mobile_number=?", mobileNumber).Scan(&existingMobile)
+	if err == nil {
+		http.Error(w, "Mobile number is already registered", http.StatusBadRequest)
+		return
+	} else if err != sql.ErrNoRows {
+		log.Println("Error checking existing mobile number:", err)
+		http.Error(w, "Error checking existing mobile number", http.StatusInternalServerError)
+		return
+	}
 
 	// Insert user information into the database
-	_, err = db.Exec("INSERT INTO users (first_name, last_name, mobile_number, email_address) VALUES (?, ?, ?, ?)",
-		firstName, lastName, mobileNumber, emailAddress)
+	_, err = db.Exec("INSERT INTO users (first_name, last_name, mobile_number, email_address, account_password) VALUES (?, ?, ?, ?, ?)",
+		firstName, lastName, mobileNumber, emailAddress, password)
 	if err != nil {
 		log.Println("Error inserting user into the database:", err)
 		http.Error(w, "Error inserting user into the database", http.StatusInternalServerError)
@@ -87,7 +112,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	// Calculate the duration between the creation date and the current date
 	oneYearAgo := time.Now().AddDate(-1, 0, 0)
 	if createdAt.After(oneYearAgo) {
-		http.Error(w, "User account is not more than 1 year old", http.StatusBadRequest)
+		http.Error(w, "User account is not more than 1 year old", http.StatusForbidden) // Use Forbidden (403) for this case
 		return
 	}
 
@@ -99,6 +124,7 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Respond to the client
 	fmt.Fprintf(w, "User deleted successfully!")
 }
 
@@ -119,7 +145,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	lastName := r.FormValue("last_name")
 	mobileNumber := r.FormValue("mobile_number")
 	emailAddress := r.FormValue("email_address")
-	isCarOwner := r.FormValue("is_car_owner") == "true" // Assuming a checkbox or boolean input
+	password := r.FormValue("account_password") // Add this line to retrieve the updated password
+	isCarOwner := r.FormValue("is_car_owner") == "true"
 	driverLicenseNumber := r.FormValue("driver_license_number")
 	carPlateNumber := r.FormValue("car_plate_number")
 
@@ -130,8 +157,8 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update user information in the database
-	query := "UPDATE users SET first_name=?, last_name=?, mobile_number=?, email_address=?, is_car_owner=?"
-	params := []interface{}{firstName, lastName, mobileNumber, emailAddress, isCarOwner}
+	query := "UPDATE users SET first_name=?, last_name=?, mobile_number=?, email_address=?, account_password=?, is_car_owner=?"
+	params := []interface{}{firstName, lastName, mobileNumber, emailAddress, password, isCarOwner}
 
 	if isCarOwner {
 		query += ", driver_license_number=?, car_plate_number=?"
