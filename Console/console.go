@@ -189,6 +189,8 @@ func UserMenu(email string) {
 			fmt.Scan(&option)
 			if option == 0 {
 				break
+			} else if option == 1 {
+				EnrollInTrip(email)
 			} else if option == 2 {
 				UpdateUserDetails(email, password)
 			} else if option == 3 {
@@ -201,6 +203,8 @@ func UserMenu(email string) {
 					fmt.Println("Account deleted successfully!")
 					break // exit the loop after deleting the account
 				}
+			} else if option == 4 {
+				ViewPastTrips(email)
 			}
 		}
 
@@ -550,4 +554,133 @@ func UpdateTripDetails(tripID int, updatedTrip Trip) error {
 	// If needed, you can read and process the response body here
 
 	return nil
+}
+
+func EnrollInTrip(email string) {
+	// Fetch all published trips from the API
+	resp, err := http.Get("http://localhost:5000/api/v1/ViewTrips")
+	if err != nil {
+		fmt.Println("Error fetching available trips:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println("Failed to fetch available trips. Status code:", resp.StatusCode)
+		return
+	}
+
+	// Decode the response body into a slice of Trip structs
+	var trips []Trip
+	err = json.NewDecoder(resp.Body).Decode(&trips)
+	if err != nil {
+		fmt.Println("Error decoding trip data:", err)
+		return
+	}
+
+	// Display the available trips to the user
+	fmt.Println("Available Trips:")
+	for i, trip := range trips {
+		fmt.Printf("%d. %+v\n", i+1, trip)
+	}
+
+	// Prompt the user to select a trip to enroll in
+	var selectedTripIndex int
+	fmt.Print("Enter the number of the trip to enroll in (0 to cancel): ")
+	fmt.Scan(&selectedTripIndex)
+
+	if selectedTripIndex == 0 {
+		fmt.Println("Enrollment canceled.")
+		return
+	}
+
+	// Check if the selected index is valid
+	if selectedTripIndex < 1 || selectedTripIndex > len(trips) {
+		fmt.Println("Invalid selection. Please enter a valid trip number.")
+		return
+	}
+
+	// Enroll the user in the selected trip
+	err = EnrollUserInTrip(email, trips[selectedTripIndex-1].TripID)
+	if err != nil {
+		fmt.Println("Error enrolling in trip:", err)
+		return
+	}
+
+	fmt.Println("Enrollment successful!")
+}
+
+func EnrollUserInTrip(email string, tripID int) error {
+	// Fetch the user ID using the email address
+	var userID int
+	err := db.QueryRow("SELECT user_id FROM users WHERE email_address=?", email).Scan(&userID)
+	if err != nil {
+		return fmt.Errorf("Error retrieving user ID:", err)
+	}
+
+	// Check if the user is already enrolled in the selected trip
+	var existingEnrollment int
+	err = db.QueryRow("SELECT COUNT(*) FROM user_trips WHERE user_Id=? AND tripId=?", userID, tripID).Scan(&existingEnrollment)
+	if err != nil {
+		return fmt.Errorf("Error checking existing enrollment:", err)
+	}
+
+	if existingEnrollment > 0 {
+		return fmt.Errorf("You are already enrolled in this trip.")
+	}
+
+	// Insert a new enrollment record into the UserTrips table
+	_, err = db.Exec("INSERT INTO user_trips (user_Id, tripId) VALUES (?, ?)", userID, tripID)
+	if err != nil {
+		return fmt.Errorf("Error enrolling user in trip:", err)
+	}
+
+	// Update the number of available seats for the selected trip
+	_, err = db.Exec("UPDATE Trips SET seatsAvailable = seatsAvailable - 1 WHERE tripId = ?", tripID)
+	if err != nil {
+		return fmt.Errorf("Error updating available seats:", err)
+	}
+
+	return nil
+}
+
+func ViewPastTrips(email string) {
+	// Fetch the user ID using the email address
+	var userID int
+	err := db.QueryRow("SELECT user_id FROM users WHERE email_address=?", email).Scan(&userID)
+	if err != nil {
+		fmt.Println("Error retrieving user ID:", err)
+		return
+	}
+
+	// Make the HTTP GET request to fetch past trips for the user
+	url := fmt.Sprintf("http://localhost:5000/api/v1/ViewPastTrips/%d", userID)
+	resp, err := http.Get(url)
+	if err != nil {
+		fmt.Println("Error fetching past trips:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		fmt.Println("Failed to fetch past trips. Status code:", resp.StatusCode)
+		return
+	}
+
+	// Decode the response body into a slice of Trip structs
+	var pastTrips []Trip
+	err = json.NewDecoder(resp.Body).Decode(&pastTrips)
+	if err != nil {
+		fmt.Println("Error decoding past trip data:", err)
+		// Print the raw response body for inspection
+		body, _ := ioutil.ReadAll(resp.Body)
+		fmt.Println("Raw Response Body:", string(body))
+		return
+	}
+
+	// Display the past trips to the user
+	fmt.Println("Past Trips:")
+	for i, trip := range pastTrips {
+		fmt.Printf("%d. %+v\n", i+1, trip)
+	}
 }

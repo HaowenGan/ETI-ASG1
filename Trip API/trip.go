@@ -40,7 +40,8 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/v1/MakeTrip", CreateTrip).Methods("POST")
 	router.HandleFunc("/api/v1/EditTrip/{tripId}", UpdateTrip).Methods("PUT")
-
+	router.HandleFunc("/api/v1/ViewTrips", ViewPublishedTrips).Methods("GET")
+	router.HandleFunc("/api/v1/ViewPastTrips/{user_id}", ViewPastTrips).Methods("GET")
 	fmt.Println("Listening at Port 5000")
 	log.Fatal(http.ListenAndServe(":5000", router))
 }
@@ -119,4 +120,69 @@ func UpdateTrip(w http.ResponseWriter, r *http.Request) {
 	// Return the updated trip as JSON
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(updatedTrip)
+}
+
+func ViewPublishedTrips(w http.ResponseWriter, r *http.Request) {
+	// Fetch all published trips from the database
+	rows, err := db.Query("SELECT tripId, ownerId, pickupLocation, alternatePickupLocation, startTime, destination, seatsAvailable FROM Trips WHERE published=true")
+	if err != nil {
+		log.Printf("Error fetching published trips: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var trips []Trip
+
+	// Iterate over the rows and populate the trips slice
+	for rows.Next() {
+		var trip Trip
+		err := rows.Scan(&trip.TripID, &trip.OwnerID, &trip.PickupLocation, &trip.AlternatePickupLocation, &trip.StartTime, &trip.Destination, &trip.SeatsAvailable)
+		if err != nil {
+			log.Printf("Error scanning trip rows: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		trips = append(trips, trip)
+	}
+
+	// Return the list of published trips as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(trips)
+}
+
+func ViewPastTrips(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userID, err := strconv.Atoi(vars["user_id"]) // Corrected parameter name
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch past trips for the user from the database
+	rows, err := db.Query("SELECT t.tripId, t.ownerId, t.pickupLocation, t.alternatePickupLocation, t.startTime, t.destination, t.seatsAvailable, t.published FROM Trips t INNER JOIN user_trips ut ON t.tripId = ut.tripId WHERE ut.user_id = ? AND t.startTime < NOW()", userID)
+	if err != nil {
+		log.Printf("Error fetching past trips: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var pastTrips []Trip
+
+	// Iterate over the rows and populate the pastTrips slice
+	for rows.Next() {
+		var trip Trip
+		err := rows.Scan(&trip.TripID, &trip.OwnerID, &trip.PickupLocation, &trip.AlternatePickupLocation, &trip.StartTime, &trip.Destination, &trip.SeatsAvailable, &trip.Published)
+		if err != nil {
+			log.Printf("Error scanning trip rows: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		pastTrips = append(pastTrips, trip)
+	}
+
+	// Return the list of past trips as JSON
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(pastTrips)
 }
