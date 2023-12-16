@@ -471,43 +471,41 @@ func EditTripDetails(tripID int) {
 	fmt.Printf("%+v\n", existingTrip)
 
 	var updatedTrip Trip
-	fmt.Print("Enter new pickup location (press Enter to keep existing): ")
+	fmt.Print("Enter new pickup location: ")
 	fmt.Scan(&updatedTrip.PickupLocation)
 	if updatedTrip.PickupLocation == "" {
 		updatedTrip.PickupLocation = existingTrip.PickupLocation
 	}
 
-	fmt.Print("Enter new alternate pickup location (press Enter to keep existing): ")
+	fmt.Print("Enter new alternate pickup location: ")
 	fmt.Scan(&updatedTrip.AlternatePickupLocation)
 	if updatedTrip.AlternatePickupLocation == "" {
 		updatedTrip.AlternatePickupLocation = existingTrip.AlternatePickupLocation
 	}
 
-	fmt.Print("Enter new Start time (press Enter to keep existing): ")
+	fmt.Print("Enter new Start time: ")
 	fmt.Scan(&updatedTrip.StartTime)
 	if updatedTrip.StartTime == "" {
 		updatedTrip.StartTime = existingTrip.StartTime
 	}
 
-	fmt.Print("Enter new Destination (press Enter to keep existing): ")
+	fmt.Print("Enter new Destination: ")
 	fmt.Scan(&updatedTrip.Destination)
 	if updatedTrip.Destination == "" {
 		updatedTrip.Destination = existingTrip.Destination
 	}
 
-	fmt.Print("Enter new Seats Available (press Enter to keep existing): ")
+	fmt.Print("Enter new Seats Available: ")
 	fmt.Scan(&updatedTrip.SeatsAvailable)
 	if updatedTrip.SeatsAvailable == 0 {
 		updatedTrip.SeatsAvailable = existingTrip.SeatsAvailable
 	}
 
-	fmt.Print("Enter new Published value (true/false, press Enter to keep existing): ")
+	fmt.Print("Enter new Published value: ")
 	fmt.Scan(&updatedTrip.Published)
 	if !updatedTrip.Published {
 		updatedTrip.Published = existingTrip.Published
 	}
-
-	// Add similar prompts for other fields you want to update
 
 	// Call the API to update the trip details
 	err = UpdateTripDetails(tripID, updatedTrip)
