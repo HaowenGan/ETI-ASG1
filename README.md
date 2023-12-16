@@ -1,6 +1,11 @@
 # ETI-ASG1
 ## Overview
-- This carpooling system consists of two microservices: User API and Trip API, along with a console application that interacts with these APIs. Below are the design considerations for each component:
+- This carpooling system consists of two microservices: User API and Trip API, along with a console application that interacts with these APIs.
+
+## Instructions for Setting up and running of Microservices
+- Run the "ETI_ASG1 SQL Script" in MySQL Workbench to setup database
+- go run user.go and trip.go to start the API
+- go run console.go to start the console
 
 ### User API Endpoints:
 
@@ -83,4 +88,3 @@ This microservice is designed to handle two main functionalities: trip managemen
 
 - `user_id` (Foreign Key referencing Users table)
 - `tripId` (Foreign Key referencing Trips table)
-
